@@ -44,6 +44,17 @@ LOCAL_SHARED_LIBRARIES := libcutils
 
 include $(BUILD_SHARED_LIBRARY)
 
+# powerbtn executable
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := power/powerbtnd.c
+
+LOCAL_MODULE := powerbtnd
+LOCAL_MODULE_TAGS := optional
+LOCAL_SHARED_LIBRARIES := liblog
+
+include $(BUILD_EXECUTABLE)
+
 # legacy_audio builds it's own set of libraries that aren't linked into
 # hardware_legacy
 include $(LEGACY_AUDIO_MAKEFILES)
