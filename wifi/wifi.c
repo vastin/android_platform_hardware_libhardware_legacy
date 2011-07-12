@@ -343,7 +343,7 @@ int update_ctrl_interface(const char *config_file) {
         int ilen = 0;
         int mlen = strlen(ifc);
         int nwrite;
-        if (strncmp(ifc, iptr, mlen) != 0) {
+        if (strncmp("DIR=", iptr, 4) && strncmp(ifc, iptr, mlen)) {
             LOGE("ctrl_interface != %s", ifc);
             while (((ilen + (iptr - pbuf)) < nread) && (iptr[ilen] != '\n'))
                 ilen++;
