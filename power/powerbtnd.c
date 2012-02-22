@@ -1,7 +1,7 @@
 /**
  * A daemon to simulate power button of Android
  *
- * Copyright (C) 2011 The Android-x86 Open Source Project
+ * Copyright (C) 2011-2012 The Android-x86 Open Source Project
  *
  * by Chih-Wei Huang <cwhuang@linux.org.tw>
  *
@@ -19,6 +19,7 @@
 #include <cutils/log.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
+#include <cutils/properties.h>
 
 const int MAX_POWERBTNS = 3;
 
@@ -35,7 +36,7 @@ int openfds(struct pollfd pfds[])
 				continue;
 			char name[PATH_MAX];
 			snprintf(name, PATH_MAX, "%s/%s", dirname, de->d_name);
-			fd = open(name, O_RDWR);
+			fd = open(name, O_RDWR | O_NONBLOCK);
 			if (fd < 0) {
 				LOGE("could not open %s, %s", name, strerror(errno));
 				continue;
@@ -64,11 +65,33 @@ int openfds(struct pollfd pfds[])
 	return cnt;
 }
 
+void send_power(int ufd, int down)
+{
+	struct input_event iev;
+	iev.type  = EV_KEY;
+	iev.code  = KEY_POWER;
+	iev.value = down;
+	write(ufd, &iev, sizeof(iev));
+	iev.type  = EV_SYN;
+	iev.code  = SYN_REPORT;
+	iev.value = 0;
+	write(ufd, &iev, sizeof(iev));
+}
+
+void simulate_powerkey(int ufd, int longpress)
+{
+	send_power(ufd, 1);
+	if (longpress)
+		sleep(2);
+	send_power(ufd, 0);
+}
+
 int main()
 {
 	struct pollfd pfds[MAX_POWERBTNS];
 	int cnt = openfds(pfds);
-	int pollres;
+	int timeout = -1;
+	char prop[PROPERTY_VALUE_MAX];
 
 	int ufd = open("/dev/uinput", O_WRONLY | O_NDELAY);
 	if (ufd >= 0) {
@@ -84,11 +107,20 @@ int main()
 		return -1;
 	}
 
-	while ((pollres = poll(pfds, cnt, -1))) {
+	property_get("poweroff.doubleclick", prop, NULL);
+
+	for (;;) {
 		int i;
+		int pollres = poll(pfds, cnt, timeout) ;
+		LOGV("pollres=%d %d\n", pollres, timeout);
 		if (pollres < 0) {
 			LOGE("poll error: %s", strerror(errno));
 			break;
+		}
+		if (pollres == 0) { // timeout, send one power key
+			simulate_powerkey(ufd, 0);
+			timeout = -1;
+			continue;
 		}
 		for (i = 0; i < cnt; ++i) {
 			if (pfds[i].revents & POLLIN) {
@@ -99,17 +131,14 @@ int main()
 					continue;
 				}
 				LOGV("type=%d scancode=%d value=%d from fd=%d", iev.type, iev.code, iev.value, pfds[i].fd);
-				if (iev.type == EV_KEY) {
-					switch (iev.code)
-					{
-						case KEY_POWER:
-							if (!iev.value)
-								sleep(2);
-							break;
+				if (iev.type == EV_KEY && iev.code == KEY_POWER && !iev.value) {
+					if (prop[0] != '1' || timeout > 0) {
+						simulate_powerkey(ufd, 1);
+						timeout = -1;
+					} else {
+						timeout = 1000; // one second
 					}
 				}
-
-				write(ufd, &iev, sizeof(iev));
 			}
 		}
 	}
